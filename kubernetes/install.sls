@@ -1,8 +1,18 @@
 # module: kubernetes: install
 # state.apply kubernetes.install
 #
+# Pillar:
+# /kubernetes/init.sls
+#
 # Description:
 # Ensures kubernetes is installed
+
+{% set kubernetes_server           = salt.pillar.get('kubernetes:nfs_storage:server') %}
+{% set kubernetes_server_directory = salt.pillar.get('kubernetes:nfs_storage:server_directory') %}
+{% set kubernetes_local_directory  = salt.pillar.get('kubernetes:nfs_storage:local_directory') %}
+{% set kubernetes_options          = salt.pillar.get('kubernetes:nfs_storage:options') %}
+{% set kubernetes_dump             = salt.pillar.get('kubernetes:nfs_storage:dump') %}
+{% set kubernetes_fcsk             = salt.pillar.get('kubernetes:nfs_storage:fcsk') %}
 
 include:
   - kubernetes.kubelet.init
@@ -10,26 +20,23 @@ include:
   - kubernetes.kubectl.init
   - kubernetes.cri-o.init
 
-# Create repository file for kubernetes
 create-/etc/yum.repos.d/kubernetes.repo:
-  file.managed:
-    - name:  /etc/yum.repos.d/kubernetes.repo
-    - source: salt://files/linux/rhel/etc/yum.repos.d/kubernetes.repo
-    - user:  root
-    - group: root
-    - mode:  644
-    - output_loglevel: quiet
-    - quiet: True
+  pkgrepo.managed:
+    - name: kubernetes
+    - baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+    - enabled: 1
+    - gpgkey: https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+    - gpgcheck: 1
 
 # Execute command to set SELinux to permissive mode (effectively disabling it)
 disable-SELinux:
   cmd.run:
     - name: setenforce 0
 
-# Execute command to set SELinux to permissive mode (effectively disabling it)
-set-SELinux_config:
-  cmd.run:
-    - name: sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+# Set SELinux mode to permissive mode (effectively disabling it)
+set-SELinux_mode:
+  selinux.mode:
+    - name: permissive
 
 # Ensure kubelet service is started and enabled
 start-service_kubelet:
@@ -39,11 +46,31 @@ start-service_kubelet:
     - require:
       - pkg: kubelet
 
-# Ensure firewalld service is stopped and disabled
-stop-service_firewalld:
-  service.dead:
+# Ensure firewalld service is running and started
+start-service_firewalld:
+  service.running:
     - name: firewalld
-    - enable: False
+    - enable: True
+
+# Create firewalld service .xml file for kubernetes
+create-firewalld_service_kubernetes:
+  firewalld.service:
+    - name: kubernetes
+    - ports:
+{% for port in salt.pillar.get('kubernetes:firewalld:ports') %}
+      - {{ port }}
+{% endfor %}
+    - require:
+      - service: firewalld
+
+# Apply kubernetes service to firewalld public
+apply-firewalld_service_kubernetes_to_public:
+  firewalld.present:
+    - name: public
+    - services:
+      - kubernetes
+    - watch:
+      - firewalld: kubernetes
 
 # Execute command to disable swap
 disable-swap:
@@ -54,4 +81,34 @@ disable-swap:
 comment-/etc/fstab:
   file.comment:
     - name:  /etc/fstab
-    - regex: ^/dev/mapper/rl_
+    - regex: ^\/dev\/mapper\/rl_.*-swap
+
+# Install nfs-utils package
+install-nfs-utils:
+  pkg.installed:
+    - name: nfs-utils
+
+install-iproute-tc:
+  pkg.installed:
+    - name: iproute-tc
+
+create-{{ kubernetes_local_directory }}:
+  file.directory:
+    - name: {{ kubernetes_local_directory }}
+    - makedirs: True
+
+# Update /etc/fstab configuration with nfs share
+append-/etc/fstab:
+  file.append:
+    - name: /etc/fstab
+    - text: "{{ kubernetes_server }}:{{ kubernetes_server_directory }} {{ kubernetes_local_directory }} nfs {{ kubernetes_options }} {{ kubernetes_dump }} {{ kubernetes_fcsk}}"
+    - require:
+      - pkg: nfs-utils
+      - file: {{ kubernetes_local_directory }}
+
+# Execute command to mount all from /etc/fstab
+run-mount:
+  cmd.run:
+    - name: mount -a
+    - watch:
+      - file: /etc/fstab

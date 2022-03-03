@@ -1,8 +1,13 @@
 # module: kubernetes.cri-o: install
 # state.apply kubernetes.cri-o.install
 #
+# Pillar:
+# /kubernetes/init.sls
+#
 # Description:
 # Ensures cri-o is installed
+
+{% set crio_version = salt.pillar.get('kubernetes:crio:version').split('.') %}
 
 # Create .conf file for cri-o to load modules at bootup
 create-/etc/modules-load.d/crio.conf:
@@ -44,41 +49,39 @@ run-sysctl:
     - onchanges:
       - file: /etc/sysctl.d/99-kubernetes-cri.conf
 
-# Create repository file for devel-kubic-libcontainers-stable
 create-/etc/yum.repos.d/devel-kubic-libcontainers-stable.repo:
-  file.managed:
-    - name:  /etc/yum.repos.d/devel-kubic-libcontainers-stable.repo
-    - source: salt://files/linux/rhel/etc/yum.repos.d/devel-kubic-libcontainers-stable.repo
-    - user:  root
-    - group: root
-    - mode:  644
-    - output_loglevel: quiet
-    - quiet: True
+  pkgrepo.managed:
+    - comments: 
+      - 'Stable Releases of Upstream github.com/containers packages (CentOS_8)'
+    - name: devel_kubic_libcontainers_stable
+    - baseurl: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_8/
+    - enabled: 1
+    - gpgkey: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_8/repodata/repomd.xml.key
+    - gpgcheck: 1
 
-# Create repository file for devel-kubic-libcontainers-stable-cri-o-1.20
-create-/etc/yum.repos.d/devel-kubic-libcontainers-stable-cri-o-1.20.repo:
-  file.managed:
-    - name:  /etc/yum.repos.d/devel-kubic-libcontainers-stable-cri-o-1.20.repo
-    - source: salt://files/linux/rhel/etc/yum.repos.d/devel-kubic-libcontainers-stable-cri-o-1.20.repo
-    - user:  root
-    - group: root
-    - mode:  644
-    - output_loglevel: quiet
-    - quiet: True
+create-/etc/yum.repos.d/devel-kubic-libcontainers-stable-cri-o-{{ crio_version[0] }}.{{ crio_version[1] }}.repo:
+  pkgrepo.managed:
+    - comments: 
+      - 'devel:kubic:libcontainers:stable:cri-o:{{ crio_version[0] }}.{{ crio_version[1] }} (CentOS_8)'
+    - name: devel_kubic_libcontainers_stable_cri-o_{{ crio_version[0] }}.{{ crio_version[1] }}
+    - baseurl: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/{{ crio_version[0] }}.{{ crio_version[1] }}/CentOS_8/
+    - enabled: 1
+    - gpgkey: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/{{ crio_version[0] }}.{{ crio_version[1] }}/CentOS_8/repodata/repomd.xml.key
+    - gpgcheck: 1
 
 # Install cri-o package
-install-cri-o:
+install-cri-o_{{ crio_version[0] }}.{{ crio_version[1] }}.{{ crio_version[2] }}:
   pkg.installed:
     - name: cri-o
-    #- version: 1.20
+    - version: "{{ crio_version[0] }}.{{ crio_version[1] }}.{{ crio_version[2] }}"
     - require:
-      - file: /etc/yum.repos.d/devel-kubic-libcontainers-stable.repo
-      - file: /etc/yum.repos.d/devel-kubic-libcontainers-stable-cri-o-1.20.repo
+      - pkgrepo: devel_kubic_libcontainers_stable
+      - pkgrepo: devel_kubic_libcontainers_stable_cri-o_{{ crio_version[0] }}.{{ crio_version[1] }}
 
-# Ensure cri-o service is started and enabled
-start-service_cri-o:
+# Ensure crio service is started and enabled
+start-service_crio:
   service.running:
-    - name: cri-o
+    - name: crio
     - enable: True
     - require:
       - pkg: cri-o

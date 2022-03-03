@@ -1,13 +1,18 @@
 # module: kubernetes.kubeadm: install
 # state.apply kubernetes.kubeadm.install
 #
+# Pillar:
+# /kubernetes/init.sls
+#
 # Description:
 # Ensures kubeadm is installed
 
+{% set kubeadm_version = salt.pillar.get('kubernetes:kubeadm:version') %}
+
 # Install kubeadm package
-install-kubeadm:
+install-kubeadm_{{ kubeadm_version }}:
   pkg.installed:
     - name: kubeadm
-    - version: 1.22.3
+    - version: {{ kubeadm_version }}
     - require:
-      - file: /etc/yum.repos.d/kubernetes.repo
+      - pkgrepo: kubernetes

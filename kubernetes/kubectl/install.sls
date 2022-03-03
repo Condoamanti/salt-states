@@ -1,13 +1,18 @@
 # module: kubernetes.kubectl: install
 # state.apply kubernetes.kubectl.install
 #
+# Pillar:
+# /kubernetes/init.sls
+#
 # Description:
 # Ensures kubectl is installed
 
+{% set kubectl_version = salt.pillar.get('kubernetes:kubectl:version') %}
+
 # Install kubectl package
-install-kubectl:
+install-kubectl_{{ kubectl_version }}:
   pkg.installed:
     - name: kubectl
-    - version: 1.22.3
+    - version: {{ kubectl_version }}
     - require:
-      - file: /etc/yum.repos.d/kubernetes.repo
+      - pkgrepo: kubernetes

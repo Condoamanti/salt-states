@@ -1,8 +1,6 @@
 base:
   '*':
     - packages
-  'PLEX*':
-    - plexmeidaserver
   'roles:kubernetes_master':
     - match: grain
     - kubernetes
